@@ -1,8 +1,10 @@
 import * as THREE from "three";
+import "./style.css";
 
 function main() {
   const canvas = document.getElementById("c") as HTMLCanvasElement;
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
+  renderer.setClearColor(0xaaaaaa);
 
   function makeCamera(fov: number = 45) {
     const aspect = window.innerWidth / window.innerHeight;
@@ -49,6 +51,7 @@ function main() {
   const GroundMaterial = new THREE.MeshPhongMaterial({ color: 0xcc8866 });
   const groundMesh = new THREE.Mesh(groundGeometry, GroundMaterial);
   groundMesh.rotation.x = Math.PI * -0.5;
+  groundMesh.position.y = -1.5;
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
 
@@ -89,7 +92,7 @@ function main() {
     [-carWidth / 2 - wheelThickness / 2, -carHeight / 2, -carLength / 3],
     [carWidth / 2 + wheelThickness / 2, -carHeight / 2, -carLength / 3],
   ];
-  const wheelMeshs = wheelPositions.map((p) => {
+  const wheelMeshes = wheelPositions.map((p) => {
     const mesh = new THREE.Mesh(wheelGeometry, wheelMaterial);
     mesh.position.set(...p);
     mesh.rotation.z = Math.PI * 0.5;
@@ -168,11 +171,97 @@ function main() {
   targetBob.add(targetCameraPivot);
   targetCameraPivot.add(targetCamera);
 
-  function testRender() {
-    renderer.render(scene, camera);
+  const curve = new THREE.SplineCurve([
+    new THREE.Vector2(-10, 0),
+    new THREE.Vector2(-5, 5),
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(5, -5),
+    new THREE.Vector2(10, 0),
+    new THREE.Vector2(5, 10),
+    new THREE.Vector2(-5, 10),
+    new THREE.Vector2(-10, -10),
+    new THREE.Vector2(-15, -8),
+    new THREE.Vector2(-10, 0),
+  ]);
+
+  const points = curve.getPoints(50);
+  const splineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+  const splineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+  const splineObject = new THREE.Line(splineGeometry, splineMaterial);
+  scene.add(splineObject);
+  splineObject.rotation.x = 0.5 * Math.PI;
+  splineObject.position.y = 0.001;
+
+  function resizeRendererToDisplaySize(renderer: THREE.WebGLRenderer) {
+    const canvas = renderer.domElement;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const needResize = width !== canvas.width || height !== canvas.height;
+    if (needResize) {
+      renderer.setSize(width, height, false);
+    }
+
+    return needResize;
   }
-  renderer.setSize(window.innerWidth / 2, window.innerHeight / 2);
-  renderer.setAnimationLoop(testRender);
+
+  const targetPosition = new THREE.Vector3();
+  const tankPosition = new THREE.Vector2();
+  const tankTarget = new THREE.Vector2();
+
+  const cameras = [
+    { cam: camera, desc: "detached camera" },
+    { cam: turretCamera, desc: "on turret looking at target" },
+    { cam: targetCamera, desc: "near target looking at tank" },
+    { cam: tankCamera, desc: "above back of tank" },
+  ];
+
+  const infoElem = document.getElementById("info");
+
+  function render(time: number) {
+    const seconds = 0.001 * time;
+
+    if (resizeRendererToDisplaySize(renderer)) {
+      const canvas = renderer.domElement;
+      cameras.forEach((cameraInfo) => {
+        const camera = cameraInfo.cam;
+        camera.aspect = canvas.clientWidth / canvas.clientHeight;
+        camera.updateProjectionMatrix();
+      });
+    }
+
+    targetOrbit.rotation.y = 0.25 * seconds;
+    targetBob.position.y = 4 * Math.sin(2 * seconds);
+    targetMesh.rotation.x = 7 * seconds;
+    targetMesh.rotation.y = 13 * seconds;
+    targetMaterial.emissive.setHSL((10 * seconds) % 1, 1, 0.25);
+    targetMaterial.color.setHSL((10 * seconds) % 1, 1, 0.25);
+
+    const tankTime = 0.05 * seconds;
+    curve.getPointAt(tankTime % 1, tankPosition);
+    curve.getPointAt((tankTime + 0.01) % 1, tankTarget);
+    tank.position.set(tankPosition.x, 0, tankPosition.y);
+    tank.lookAt(tankTarget.x, 0, tankTarget.y);
+
+    targetMesh.getWorldPosition(targetPosition);
+    turretPivot.lookAt(targetPosition);
+
+    turretCamera.lookAt(targetPosition);
+
+    tank.getWorldPosition(targetPosition);
+    targetCameraPivot.lookAt(targetPosition);
+
+    wheelMeshes.forEach((obj) => {
+      obj.rotation.x = 3 * seconds;
+    });
+
+    const camera = cameras[(0.25 * seconds) % cameras.length | 0];
+    if (infoElem !== null) {
+      infoElem.textContent = camera.desc;
+    }
+    renderer.render(scene, camera.cam);
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
 }
 
 main();
